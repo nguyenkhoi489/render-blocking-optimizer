@@ -28,7 +28,11 @@ class Render_Blocking_Optimizer {
             'exclude_jquery' => 0,
             'exclude_jquery_urls' => '',
             'exclude_scripts' => '',
-            'exclude_styles' => ''
+            'exclude_styles' => '',
+            'custom_preload_js' => '',
+            'custom_preload_css' => '',
+            'custom_preload_fonts' => '',
+            'custom_preconnect' => ''
         );
         
         $saved_options = get_option('rbo_settings', array());
@@ -86,6 +90,12 @@ class Render_Blocking_Optimizer {
         $sanitized['exclude_jquery_urls'] = isset($input['exclude_jquery_urls']) ? sanitize_textarea_field($input['exclude_jquery_urls']) : '';
         $sanitized['exclude_scripts'] = isset($input['exclude_scripts']) ? sanitize_text_field($input['exclude_scripts']) : '';
         $sanitized['exclude_styles'] = isset($input['exclude_styles']) ? sanitize_text_field($input['exclude_styles']) : '';
+        
+        // Custom preload/preconnect fields
+        $sanitized['custom_preload_js'] = isset($input['custom_preload_js']) ? sanitize_textarea_field($input['custom_preload_js']) : '';
+        $sanitized['custom_preload_css'] = isset($input['custom_preload_css']) ? sanitize_textarea_field($input['custom_preload_css']) : '';
+        $sanitized['custom_preload_fonts'] = isset($input['custom_preload_fonts']) ? sanitize_textarea_field($input['custom_preload_fonts']) : '';
+        $sanitized['custom_preconnect'] = isset($input['custom_preconnect']) ? sanitize_textarea_field($input['custom_preconnect']) : '';
         
         return $sanitized;
     }
@@ -378,6 +388,12 @@ class Render_Blocking_Optimizer {
         // DNS-prefetch cho các domain khác
         echo '<link rel="dns-prefetch" href="//fonts.googleapis.com">' . "\n";
         echo '<link rel="dns-prefetch" href="//fonts.gstatic.com">' . "\n";
+        
+        // === CUSTOM PRELOAD TAGS ===
+        $this->add_custom_preload_tags();
+        
+        // === CUSTOM PRECONNECT TAGS ===
+        $this->add_custom_preconnect_tags();
     }
     
     /**
@@ -394,6 +410,75 @@ class Render_Blocking_Optimizer {
             }
         }
         return $html;
+    }
+    
+    /**
+     * Thêm custom preload tags từ settings
+     */
+    private function add_custom_preload_tags() {
+        // Preload JavaScript files
+        if (!empty($this->options['custom_preload_js'])) {
+            $js_urls = array_filter(array_map('trim', explode("\n", $this->options['custom_preload_js'])));
+            foreach ($js_urls as $url) {
+                if (!empty($url)) {
+                    echo '<link rel="preload" href="' . esc_url($url) . '" as="script">' . "\n";
+                }
+            }
+        }
+        
+        // Preload CSS files
+        if (!empty($this->options['custom_preload_css'])) {
+            $css_urls = array_filter(array_map('trim', explode("\n", $this->options['custom_preload_css'])));
+            foreach ($css_urls as $url) {
+                if (!empty($url)) {
+                    echo '<link rel="preload" href="' . esc_url($url) . '" as="style">' . "\n";
+                }
+            }
+        }
+        
+        // Preload Font files
+        if (!empty($this->options['custom_preload_fonts'])) {
+            $font_urls = array_filter(array_map('trim', explode("\n", $this->options['custom_preload_fonts'])));
+            foreach ($font_urls as $line) {
+                if (!empty($line)) {
+                    // Format: URL|type hoặc chỉ URL
+                    $parts = explode('|', $line);
+                    $url = trim($parts[0]);
+                    $type = isset($parts[1]) ? trim($parts[1]) : 'woff2';
+                    
+                    // Validate font type
+                    $valid_types = array('woff2', 'woff', 'ttf', 'otf', 'eot');
+                    if (!in_array($type, $valid_types)) {
+                        $type = 'woff2';
+                    }
+                    
+                    echo '<link rel="preload" href="' . esc_url($url) . '" as="font" type="font/' . esc_attr($type) . '" crossorigin>' . "\n";
+                }
+            }
+        }
+    }
+    
+    /**
+     * Thêm custom preconnect tags từ settings
+     */
+    private function add_custom_preconnect_tags() {
+        if (!empty($this->options['custom_preconnect'])) {
+            $domains = array_filter(array_map('trim', explode("\n", $this->options['custom_preconnect'])));
+            foreach ($domains as $line) {
+                if (!empty($line)) {
+                    // Format: domain|crossorigin hoặc chỉ domain
+                    $parts = explode('|', $line);
+                    $domain = trim($parts[0]);
+                    $has_crossorigin = (isset($parts[1]) && trim($parts[1]) === 'crossorigin');
+                    
+                    if ($has_crossorigin) {
+                        echo '<link rel="preconnect" href="' . esc_url($domain) . '" crossorigin>' . "\n";
+                    } else {
+                        echo '<link rel="preconnect" href="' . esc_url($domain) . '">' . "\n";
+                    }
+                }
+            }
+        }
     }
     
     /**
@@ -572,6 +657,75 @@ class Render_Blocking_Optimizer {
                             <input type="text" name="rbo_settings[exclude_styles]" value="<?php echo esc_attr($options['exclude_styles']); ?>" class="regular-text">
                             <p class="description">Danh sách handle hoặc URL của styles cần loại trừ (cách nhau bằng dấu phẩy)<br>
                             Ví dụ: <code>admin-bar, dashicons</code></p>
+                        </td>
+                    </tr>
+                </table>
+                
+                <h2>🔗 Custom Preload & Preconnect</h2>
+                <p>Thêm các resource hints tùy chỉnh để tối ưu tốc độ tải trang</p>
+                
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">
+                            <label>Preload JavaScript</label>
+                        </th>
+                        <td>
+                            <textarea name="rbo_settings[custom_preload_js]" rows="5" class="large-text code"><?php echo esc_textarea($options['custom_preload_js']); ?></textarea>
+                            <p class="description">
+                                Preload các file JavaScript quan trọng (mỗi URL một dòng)<br>
+                                <strong>Ví dụ:</strong><br>
+                                <code>https://example.com/js/critical.js</code><br>
+                                <code>/wp-content/themes/mytheme/js/main.js</code>
+                            </p>
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <th scope="row">
+                            <label>Preload CSS</label>
+                        </th>
+                        <td>
+                            <textarea name="rbo_settings[custom_preload_css]" rows="5" class="large-text code"><?php echo esc_textarea($options['custom_preload_css']); ?></textarea>
+                            <p class="description">
+                                Preload các file CSS quan trọng (mỗi URL một dòng)<br>
+                                <strong>Ví dụ:</strong><br>
+                                <code>https://example.com/css/critical.css</code><br>
+                                <code>/wp-content/themes/mytheme/style.css</code>
+                            </p>
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <th scope="row">
+                            <label>Preload Fonts</label>
+                        </th>
+                        <td>
+                            <textarea name="rbo_settings[custom_preload_fonts]" rows="5" class="large-text code"><?php echo esc_textarea($options['custom_preload_fonts']); ?></textarea>
+                            <p class="description">
+                                Preload các font files (mỗi URL một dòng)<br>
+                                <strong>Format:</strong> URL|type (type có thể là: woff2, woff, ttf, otf)<br>
+                                <strong>Ví dụ:</strong><br>
+                                <code>https://example.com/fonts/myfont.woff2|woff2</code><br>
+                                <code>/wp-content/fonts/myfont.woff|woff</code><br>
+                                Nếu không chỉ định type, mặc định sẽ dùng woff2
+                            </p>
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <th scope="row">
+                            <label>Preconnect Domains</label>
+                        </th>
+                        <td>
+                            <textarea name="rbo_settings[custom_preconnect]" rows="5" class="large-text code"><?php echo esc_textarea($options['custom_preconnect']); ?></textarea>
+                            <p class="description">
+                                Preconnect tới các domain bên ngoài (mỗi domain một dòng)<br>
+                                Thêm <code>|crossorigin</code> phía sau nếu cần thuộc tính crossorigin<br>
+                                <strong>Ví dụ:</strong><br>
+                                <code>https://cdn.example.com</code><br>
+                                <code>https://fonts.gstatic.com|crossorigin</code><br>
+                                <code>https://ajax.googleapis.com</code>
+                            </p>
                         </td>
                     </tr>
                 </table>
